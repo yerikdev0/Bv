@@ -11,12 +11,18 @@ end
 
 local Options = Find(({...})) or {
 	Keybind = "Home",
-	Language = { UI = "pt-br", Words = "pt-br" },
+
+	Language = {
+		UI = "pt-br",
+		Words = "pt-br"
+	},
+
 	Experiments = {},
+	Tempo = 0.5,
 	Rainbow = false,
 }
 
-local Version = "2.2.1 (Fixed)"
+local Version = "2.1"
 local Parent = gethui() or game:GetService("CoreGui")
 
 local require = function(Name)
@@ -45,7 +51,7 @@ local RemoteChat = require("Modules/RemoteChat")
 -- ══════════════════════════════════════
 local ChatQueue = {}
 local Sending = false
-local CHAT_INTERVAL = 0.8889
+local CHAT_INTERVAL = 0.8
 
 local function ProcessQueue()
 	if Sending then return end
@@ -54,10 +60,15 @@ local function ProcessQueue()
 	task.spawn(function()
 		while #ChatQueue > 0 do
 			local msg = table.remove(ChatQueue, 1)
+
 			pcall(function()
 				RemoteChat:Send(msg)
 			end)
-			task.wait(CHAT_INTERVAL)
+
+			local start = os.clock()
+			while os.clock() - start < CHAT_INTERVAL do
+				task.wait()
+			end
 		end
 		Sending = false
 	end)
@@ -75,10 +86,13 @@ local Char = Character.new(LP)
 local UIElements = UI.UIElements
 local Connections = {}
 
-local Threading = nil
+local Threading
+local FinishedThread = false
+
 local Settings = {
 	Started = false,
-	Jump = false, -- Certifique-se que o UI toggle altera este valor
+	Jump = false,
+
 	Config = {
 		Start = nil,
 		End = nil,
@@ -89,7 +103,19 @@ local Settings = {
 --              Methods
 -- ══════════════════════════════════════
 local Methods = {
+
 	["Normal"] = function(Message)
+		if Settings.Jump then Char:Jump() end
+		SafeSend(string.upper(Message) .. " !")
+	end,
+
+	["Lowercase"] = function(Message)
+		if Settings.Jump then Char:Jump() end
+		SafeSend(string.upper(Message) .. " !")
+	end,
+
+	["HJ"] = function(Message)
+		-- HJ não faz sentido aqui, então envia normal
 		if Settings.Jump then Char:Jump() end
 		SafeSend(string.upper(Message) .. " !")
 	end,
@@ -99,7 +125,7 @@ local Methods = {
 --              Functions
 -- ══════════════════════════════════════
 local function Listen(Name, Element)
-	if Element:GetAttribute("IntBox") or Name:find("Start") or Name:find("End") then
+	if Element:GetAttribute("IntBox") then
 		table.insert(Connections,
 			Element:GetPropertyChangedSignal("Text"):Connect(function()
 				Element.Text = string.gsub(Element.Text, "[^%d]", "")
@@ -119,18 +145,16 @@ local function EndThread()
 	if Threading then
 		task.cancel(Threading)
 		Threading = nil
+		FinishedThread = false
+		Settings.Started = false
 	end
-	Settings.Started = false
-    -- Limpa a fila ao parar para não bugar a próxima execução
-    ChatQueue = {}
-    Sending = false
 end
 
 local function DoJJ(MethodName, Number)
 	local Success, String = Extenso:Convert(Number)
 	if not Success then return end
 
-	local Method = Methods[MethodName] or Methods["Normal"]
+	local Method = Methods[MethodName]
 	if Method then
 		Method(String)
 	end
@@ -138,17 +162,14 @@ end
 
 local function StartThread()
 	local Config = Settings.Config
-	if not Config.Start or not Config.End then 
-        Settings.Started = false
-        return 
-    end
+	if not Config.Start or not Config.End then return end
+	if Threading then EndThread() return end
 
 	Threading = task.spawn(function()
 		for i = Config.Start, Config.End do
 			DoJJ("Normal", i)
-            -- Aguarda o intervalo do chat para o loop não atropelar a fila
-            task.wait(CHAT_INTERVAL)
 		end
+		FinishedThread = true
 		EndThread()
 	end)
 end
@@ -160,20 +181,14 @@ UI:SetVersion(Version)
 UI:SetRainbow(Options.Rainbow)
 UI:SetParent(Parent)
 
-if Notification then
-	Notification:SetParent(UI.getUI())
-	Notification:SetupJJs()
-end
+Notification:SetParent(UI.getUI())
 
 for Name, Element in pairs(UIElements.Box) do
 	task.spawn(Listen, Name, Element)
 end
 
--- Correção no Botão Play/Stop
 table.insert(Connections, UIElements.Play.MouseButton1Up:Connect(function()
-	if not Settings.Config.Start or not Settings.Config.End then 
-        return 
-    end
+	if not Settings.Config.Start or not Settings.Config.End then return end
 
 	if not Settings.Started then
 		Settings.Started = true
@@ -183,3 +198,6 @@ table.insert(Connections, UIElements.Play.MouseButton1Up:Connect(function()
 	end
 end))
 
+if Notification then
+	Notification:SetupJJs()
+end
